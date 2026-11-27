@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { z } from 'zod';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { scanBarcode } from '../services/nativeBridge';
 import { Screen } from '../components/ui/Screen';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { BarcodeField } from '../components/BarcodeField';
 import { spacing } from '../theme/tokens';
 import { CATEGORIES, type ProductDraft } from '../types/models';
 import { barcodeExists, createProduct, getProduct, updateProduct } from '../data/repositories/productsRepo';
@@ -68,19 +68,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       <ScrollView keyboardShouldPersistTaps="handled">
         <Card>
           <Input label="اسم المنتج *" value={draft.name} onChangeText={(v) => set('name', v)} error={errors.name} placeholder="مثال: جبنة شيدر 200 جم" />
-          <Input label="الباركود" value={draft.barcode} onChangeText={(v) => set('barcode', v)} error={errors.barcode} placeholder="رقم الباركود (اختياري)" ltr />
-          <Button
-            title="مسح الباركود بالكاميرا"
-            variant="secondary"
-            onPress={async () => {
-              try {
-                const code = await scanBarcode();
-                if (code) set('barcode', code);
-              } catch (e) {
-                show(e instanceof Error ? e.message : 'تعذّر المسح', 'error');
-              }
-            }}
-          />
+          <BarcodeField label="الباركود" value={draft.barcode} onChangeText={(v) => set('barcode', v)} error={errors.barcode} placeholder="رقم الباركود (اختياري)" />
           <Input label="الفئة" value={draft.category} onChangeText={(v) => set('category', v)} placeholder={CATEGORIES.slice(0, 3).join(' / ')} />
           <View style={styles.list}>
             {CATEGORIES.map((cat) => (

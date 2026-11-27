@@ -1,87 +1,58 @@
 package com.raqeeb.app;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.ClipData;
 import android.content.Intent;
 import android.net.Uri;
 import android.util.Base64;
 
-import com.facebook.react.bridge.ActivityEventListener;
+import androidx.core.content.FileProvider;
+
 import com.facebook.react.bridge.BaseActivityEventListener;
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
-
 import com.google.mlkit.vision.barcode.common.Barcode;
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanner;
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
- * جسر أصلي صغير:
- *  - scanBarcode: ماسح Google (خدمات Play) بدون إذن كاميرا للتطبيق.
- *  - pickFile: اختيار ملف عبر نظام الملفات وإرجاعه base64 (لاستيراد النسخة الاحتياطية).
+ * جسر أصلي لثلاث مهام: مشاركة ملف (واتساب أو قائمة المشاركة)، مسح الباركود بكاميرا Google،
+ * وحفظ/فتح ملفات النسخ الاحتياطي المشفّرة. الاسم في JavaScript: NativeModules.RaqeebNative
  */
 public class RaqeebNativeModule extends ReactContextBaseJavaModule {
-  private static final int PICK_REQUEST = 4271;
-  private static final int MAX_FILE_BYTES = 25 * 1024 * 1024;
 
-  private Promise pickPromise;
+  private static final int REQ_SAVE = 7101;
+  private static final int REQ_PICK = 7102;
+  private static final int MAX_FILE_BYTES = 60 * 1024 * 1024;
+  private static final ExecutorService POOL = Executors.newFixedThreadPool(2);
 
-  private final ActivityEventListener activityListener = new BaseActivityEventListener() {
-    @Override
-    public void onActivityResult(Activity activity, int requestCode, int resultCode, Intent data) {
-      if (requestCode != PICK_REQUEST) {
-        return;
-      }
-      final Promise promise = pickPromise;
-      pickPromise = null;
-      if (promise == null) {
-        return;
-      }
-      if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null) {
-        promise.reject("CANCELED", "canceled");
-        return;
-      }
-      final Uri uri = data.getData();
-      new Thread(new Runnable() {
-        @Override
-        public void run() {
-          try {
-            InputStream in = getReactApplicationContext().getContentResolver().openInputStream(uri);
-            if (in == null) {
-              promise.reject("READ_FAILED", "cannot open file");
-              return;
-            }
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            byte[] buffer = new byte[16384];
-            int read;
-            int total = 0;
-            while ((read = in.read(buffer)) != -1) {
-              total += read;
-              if (total > MAX_FILE_BYTES) {
-                in.close();
-                promise.reject("TOO_LARGE", "file too large");
-                return;
-              }
-              out.write(buffer, 0, read);
-            }
-            in.close();
-            promise.resolve(Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP));
-          } catch (Exception e) {
-            promise.reject("READ_FAILED", e.getMessage(), e);
-          }
-        }
-      }).start();
-    }
-  };
+  private final ReactApplicationContext appContext;
+  private final Object lock = new Object();
+  private Promise pendingPromise;
+  private String pendingBase64;
+  private int pendingRequest = 0;
 
-  public RaqeebNativeModule(ReactApplicationContext reactContext) {
+  RaqeebNativeModule(ReactApplicationContext reactContext) {
     super(reactContext);
-    reactContext.addActivityEventListener(activityListener);
+    this.appContext = reactContext;
+    reactContext.addActivityEventListener(new BaseActivityEventListener() {
+      @Override
+      public void onActivityResult(Activity activity, int requestCode, int resultCode, Intent data) {
+        handleActivityResult(requestCode, resultCode, data);
+      }
+    });
   }
 
   @Override
@@ -89,63 +60,295 @@ public class RaqeebNativeModule extends ReactContextBaseJavaModule {
     return "RaqeebNative";
   }
 
+  private static String describe(Throwable e) {
+    String m = e.getMessage();
+    return m != null && !m.isEmpty() ? e.getClass().getSimpleName() + ": " + m : e.getClass().getSimpleName();
+  }
+
+  // ───────────────────────── مسح الباركود ─────────────────────────
+
   @ReactMethod
   public void scanBarcode(final Promise promise) {
-    Activity activity = getReactApplicationContext().getCurrentActivity();
+    final Activity activity = getCurrentActivity();
     if (activity == null) {
-      promise.reject("NO_ACTIVITY", "no activity");
+      promise.reject("NO_ACTIVITY", "لا توجد شاشة نشطة");
       return;
     }
+    activity.runOnUiThread(new Runnable() {
+      @Override
+      public void run() {
+        try {
+          GmsBarcodeScanner scanner = GmsBarcodeScanning.getClient(activity);
+          scanner.startScan()
+              .addOnSuccessListener(barcode -> {
+                String value = barcode.getRawValue();
+                if (value == null || value.isEmpty()) value = barcode.getDisplayValue();
+                if (value == null || value.isEmpty()) {
+                  promise.reject("EMPTY", "لم يُقرأ باركود");
+                } else {
+                  promise.resolve(value);
+                }
+              })
+              .addOnCanceledListener(() -> promise.reject("CANCELED", "تم الإلغاء"))
+              .addOnFailureListener(e -> promise.reject("SCAN_FAILED", describe(e)));
+        } catch (Exception e) {
+          promise.reject("SCAN_FAILED", describe(e));
+        }
+      }
+    });
+  }
+
+  // ───────────────────────── مشاركة ملف ─────────────────────────
+
+  @ReactMethod
+  public void shareFile(final String base64, final String filename, final String mime,
+                        final String whatsappNumber, final String message, final Promise promise) {
+    POOL.execute(new Runnable() {
+      @Override
+      public void run() {
+        try {
+          File dir = new File(appContext.getCacheDir(), "shared");
+          if (!dir.exists() && !dir.mkdirs()) throw new IOException("تعذّر إنشاء مجلد المشاركة");
+          cleanOld(dir);
+          File file = new File(dir, safeName(filename));
+          writeBytes(file, Base64.decode(base64, Base64.DEFAULT));
+          Uri uri = FileProvider.getUriForFile(appContext, appContext.getPackageName() + ".raqeebfileprovider", file);
+          launchShare(uri, mime, whatsappNumber, message, safeName(filename));
+          promise.resolve("ok");
+        } catch (Exception e) {
+          promise.reject("SHARE_FAILED", describe(e));
+        }
+      }
+    });
+  }
+
+  private static String safeName(String name) {
+    String n = name == null ? "file" : name.replaceAll("[^A-Za-z0-9._-]", "_");
+    return n.isEmpty() ? "file" : n;
+  }
+
+  private static void cleanOld(File dir) {
+    File[] files = dir.listFiles();
+    if (files == null) return;
+    long limit = System.currentTimeMillis() - 24L * 60 * 60 * 1000;
+    for (File f : files) {
+      if (f.lastModified() < limit) {
+        //noinspection ResultOfMethodCallIgnored
+        f.delete();
+      }
+    }
+  }
+
+  private static void writeBytes(File file, byte[] bytes) throws IOException {
+    FileOutputStream out = new FileOutputStream(file);
     try {
-      GmsBarcodeScannerOptions options = new GmsBarcodeScannerOptions.Builder()
-          .setBarcodeFormats(
-              Barcode.FORMAT_EAN_13,
-              Barcode.FORMAT_EAN_8,
-              Barcode.FORMAT_UPC_A,
-              Barcode.FORMAT_UPC_E,
-              Barcode.FORMAT_CODE_128,
-              Barcode.FORMAT_CODE_39,
-              Barcode.FORMAT_CODE_93,
-              Barcode.FORMAT_ITF,
-              Barcode.FORMAT_QR_CODE)
-          .enableAutoZoom()
-          .build();
-      GmsBarcodeScanner scanner = GmsBarcodeScanning.getClient(activity, options);
-      scanner.startScan()
-          .addOnSuccessListener(barcode -> {
-            String value = barcode.getRawValue();
-            if (value == null) {
-              value = barcode.getDisplayValue();
-            }
-            promise.resolve(value);
-          })
-          .addOnCanceledListener(() -> promise.reject("CANCELED", "canceled"))
-          .addOnFailureListener(e -> promise.reject("SCAN_FAILED", e.getMessage(), e));
+      out.write(bytes);
+    } finally {
+      out.close();
+    }
+  }
+
+  private boolean isInstalled(String pkg) {
+    try {
+      appContext.getPackageManager().getPackageInfo(pkg, 0);
+      return true;
     } catch (Exception e) {
-      promise.reject("SCAN_FAILED", e.getMessage(), e);
+      return false;
+    }
+  }
+
+  private void startShareActivity(Intent intent) {
+    Activity activity = getCurrentActivity();
+    if (activity != null) {
+      activity.startActivity(intent);
+    } else {
+      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+      appContext.startActivity(intent);
+    }
+  }
+
+  private void launchShare(Uri uri, String mime, String number, String message, String name) {
+    Intent send = new Intent(Intent.ACTION_SEND);
+    send.setType(mime);
+    send.putExtra(Intent.EXTRA_STREAM, uri);
+    if (message != null && !message.isEmpty()) send.putExtra(Intent.EXTRA_TEXT, message);
+    send.setClipData(ClipData.newRawUri(name, uri));
+    send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+    if (number != null && !number.isEmpty()) {
+      String[] packages = new String[] {"com.whatsapp", "com.whatsapp.w4b"};
+      for (String pkg : packages) {
+        if (!isInstalled(pkg)) continue;
+        Intent direct = new Intent(send);
+        direct.setPackage(pkg);
+        direct.putExtra("jid", number + "@s.whatsapp.net");
+        appContext.grantUriPermission(pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+          startShareActivity(direct);
+          return;
+        } catch (ActivityNotFoundException ignored) {
+          // نجرّب التطبيق التالي ثم قائمة المشاركة العامة.
+        }
+      }
+    }
+    Intent chooser = Intent.createChooser(send, "مشاركة التقرير");
+    startShareActivity(chooser);
+  }
+
+  // ───────────────────────── حفظ وفتح ملفات ─────────────────────────
+
+  @ReactMethod
+  public void saveFile(String base64, String filename, String mime, Promise promise) {
+    Activity activity = getCurrentActivity();
+    if (activity == null) {
+      promise.reject("NO_ACTIVITY", "لا توجد شاشة نشطة");
+      return;
+    }
+    synchronized (lock) {
+      if (pendingPromise != null) {
+        promise.reject("BUSY", "عملية أخرى قيد التنفيذ");
+        return;
+      }
+      pendingPromise = promise;
+      pendingBase64 = base64;
+      pendingRequest = REQ_SAVE;
+    }
+    try {
+      Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+      intent.addCategory(Intent.CATEGORY_OPENABLE);
+      intent.setType(mime);
+      intent.putExtra(Intent.EXTRA_TITLE, filename);
+      activity.startActivityForResult(intent, REQ_SAVE);
+    } catch (Exception e) {
+      failPending("SAVE_FAILED", describe(e));
     }
   }
 
   @ReactMethod
-  public void pickFile(final Promise promise) {
-    Activity activity = getReactApplicationContext().getCurrentActivity();
+  public void pickFile(Promise promise) {
+    Activity activity = getCurrentActivity();
     if (activity == null) {
-      promise.reject("NO_ACTIVITY", "no activity");
+      promise.reject("NO_ACTIVITY", "لا توجد شاشة نشطة");
       return;
     }
-    if (pickPromise != null) {
-      promise.reject("BUSY", "picker already open");
-      return;
+    synchronized (lock) {
+      if (pendingPromise != null) {
+        promise.reject("BUSY", "عملية أخرى قيد التنفيذ");
+        return;
+      }
+      pendingPromise = promise;
+      pendingBase64 = null;
+      pendingRequest = REQ_PICK;
     }
-    pickPromise = promise;
     try {
       Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
       intent.addCategory(Intent.CATEGORY_OPENABLE);
       intent.setType("*/*");
-      activity.startActivityForResult(intent, PICK_REQUEST);
+      activity.startActivityForResult(intent, REQ_PICK);
     } catch (Exception e) {
-      pickPromise = null;
-      promise.reject("PICK_FAILED", e.getMessage(), e);
+      failPending("PICK_FAILED", describe(e));
     }
+  }
+
+  private void failPending(String code, String message) {
+    Promise promise;
+    synchronized (lock) {
+      promise = pendingPromise;
+      pendingPromise = null;
+      pendingBase64 = null;
+      pendingRequest = 0;
+    }
+    if (promise != null) promise.reject(code, message);
+  }
+
+  private void handleActivityResult(int requestCode, int resultCode, Intent data) {
+    final Promise promise;
+    final String base64;
+    final int request;
+    synchronized (lock) {
+      if (pendingPromise == null || requestCode != pendingRequest) return;
+      promise = pendingPromise;
+      base64 = pendingBase64;
+      request = pendingRequest;
+      pendingPromise = null;
+      pendingBase64 = null;
+      pendingRequest = 0;
+    }
+    if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null) {
+      promise.reject("CANCELED", "تم الإلغاء");
+      return;
+    }
+    final Uri uri = data.getData();
+    POOL.execute(new Runnable() {
+      @Override
+      public void run() {
+        try {
+          if (request == REQ_SAVE) {
+            OutputStream out = appContext.getContentResolver().openOutputStream(uri, "w");
+            if (out == null) throw new IOException("تعذّر فتح الملف للكتابة");
+            try {
+              out.write(Base64.decode(base64, Base64.DEFAULT));
+              out.flush();
+            } finally {
+              out.close();
+            }
+            promise.resolve(uri.toString());
+          } else {
+            InputStream in = appContext.getContentResolver().openInputStream(uri);
+            if (in == null) throw new IOException("تعذّر فتح الملف للقراءة");
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            try {
+              byte[] chunk = new byte[16384];
+              int n;
+              while ((n = in.read(chunk)) != -1) {
+                buffer.write(chunk, 0, n);
+                if (buffer.size() > MAX_FILE_BYTES) throw new IOException("الملف كبير جداً");
+              }
+            } finally {
+              in.close();
+            }
+            promise.resolve(Base64.encodeToString(buffer.toByteArray(), Base64.NO_WRAP));
+          }
+        } catch (Exception e) {
+          promise.reject(request == REQ_SAVE ? "SAVE_FAILED" : "PICK_FAILED", describe(e));
+        }
+      }
+    });
+  }
+
+  // ───────────────────────── تشفير النسخ الاحتياطي ─────────────────────────
+
+  @ReactMethod
+  public void encryptBackup(final String json, final String password, final Promise promise) {
+    POOL.execute(new Runnable() {
+      @Override
+      public void run() {
+        try {
+          byte[] encrypted = BackupCodec.encrypt(json, password);
+          promise.resolve(Base64.encodeToString(encrypted, Base64.NO_WRAP));
+        } catch (Exception e) {
+          promise.reject("ENCRYPT_FAILED", describe(e));
+        }
+      }
+    });
+  }
+
+  @ReactMethod
+  public void decryptBackup(final String base64, final String password, final Promise promise) {
+    POOL.execute(new Runnable() {
+      @Override
+      public void run() {
+        try {
+          byte[] file = Base64.decode(base64, Base64.DEFAULT);
+          promise.resolve(BackupCodec.decrypt(file, password));
+        } catch (BackupCodec.WrongPasswordException e) {
+          promise.reject("WRONG_PASSWORD", e.getMessage());
+        } catch (BackupCodec.BadFileException e) {
+          promise.reject("BAD_FILE", e.getMessage());
+        } catch (Exception e) {
+          promise.reject("DECRYPT_FAILED", describe(e));
+        }
+      }
+    });
   }
 }

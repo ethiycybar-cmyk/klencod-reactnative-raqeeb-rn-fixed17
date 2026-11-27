@@ -20,6 +20,7 @@ import {
 import { getShopName } from '../services/appPrefs';
 import { getWhatsappNumber, openWhatsappWithText } from '../services/whatsappService';
 import { todayISO } from '../utils/dates';
+import { nativeErrorText } from '../services/native';
 
 const FORMATS: { key: ExportFormat; label: string }[] = [
   { key: 'image', label: 'صورة' },
@@ -69,8 +70,8 @@ export function ReportExportScreen() {
         const result = await shareReportFile(format, base64, { toOwner: target === 'owner', ownerNumber: owner, shopName: shop });
         if (!result.ok && result.message && result.message !== 'تم الإلغاء') show(result.message, 'error');
       }
-    } catch {
-      show('تعذّر إنشاء التقرير. حاول مجدداً.', 'error');
+    } catch (e) {
+      show(`تعذّر إنشاء التقرير: ${nativeErrorText(e)}`, 'error');
     } finally {
       setBusy(false);
     }

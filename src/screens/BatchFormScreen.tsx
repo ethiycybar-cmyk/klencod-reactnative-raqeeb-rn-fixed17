@@ -6,6 +6,7 @@ import { Screen } from '../components/ui/Screen';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { BarcodeField } from '../components/BarcodeField';
 import { useTheme } from '../theme/ThemeContext';
 import { radius, spacing, typography } from '../theme/tokens';
 import { listProducts } from '../data/repositories/productsRepo';
@@ -124,7 +125,7 @@ export function BatchFormScreen({ route, navigation }: Props) {
           </Pressable>
           {errors.productId ? <Text style={[typography.caption, { color: theme.colors.critical }]}>{errors.productId}</Text> : null}
 
-          <Input label="رقم التشغيلة *" value={draft.batchNumber} onChangeText={(v) => set('batchNumber', v)} ltr error={errors.batchNumber} />
+          <BarcodeField label="رقم التشغيلة *" value={draft.batchNumber} onChangeText={(v) => set('batchNumber', v)} error={errors.batchNumber} />
           <Input label="الكمية" value={draft.quantity} onChangeText={(v) => set('quantity', v)} keyboard="numeric" error={errors.quantity} />
 
           <Input label="تاريخ الإنتاج" value={draft.productionDate} onChangeText={(v) => set('productionDate', v.trim())} placeholder="YYYY-MM-DD" ltr hint="اتركه فارغاً إن لم يوجد" />

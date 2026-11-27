@@ -4,6 +4,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { FlashList } from '@shopify/flash-list';
 import { Screen } from '../components/ui/Screen';
 import { Card } from '../components/ui/Card';
+import { scanBarcode } from '../services/native';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -55,6 +56,20 @@ export function ProductInfoScreen({ route }: { route: { params?: { query?: strin
     <Screen back title="معلومات المنتج" subtitle="تقرير موجز مدعوم بـ Gemini">
       <Card>
         <Input label="اسم المنتج أو الباركود" value={query} onChangeText={setQuery} placeholder="مثال: جبنة شيدر 200 جم" multiline />
+        <Button
+          title="مسح باركود المنتج بالكاميرا"
+          variant="secondary"
+          size="sm"
+          onPress={async () => {
+            try {
+              const code = await scanBarcode();
+              if (code) setQuery(code.trim());
+            } catch (e) {
+              show(e instanceof Error ? e.message : 'تعذّر مسح الباركود', 'error');
+            }
+          }}
+          style={{ alignSelf: 'flex-start', marginBottom: spacing.md }}
+        />
         {!hasKey ? (
           <Text style={[typography.caption, { color: theme.colors.warning }]}>لم تُضبط مفتاح Gemini بعد. أضفه من الإعدادات (مجاني من Google AI Studio).</Text>
         ) : null}

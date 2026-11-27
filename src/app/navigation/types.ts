@@ -33,7 +33,7 @@ export type RootStackParamList = {
   Audit: undefined;
   Thresholds: undefined;
   ReportExport: undefined;
-  Migration: undefined;
+  Migrate: { tab?: 'migrate' | 'backup' } | undefined;
 };
 
 export type TabScreenProps<T extends keyof TabParamList> = {

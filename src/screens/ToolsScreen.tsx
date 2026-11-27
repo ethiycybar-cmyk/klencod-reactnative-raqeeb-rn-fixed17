@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { AlertTriangle, Boxes, CalendarClock, LayoutDashboard, MessageCircle, PackagePlus, Search, Settings2, ShieldAlert, ShieldCheck } from 'lucide-react-native';
+import { AlertTriangle, Boxes, CalendarClock, Database, LayoutDashboard, MessageCircle, PackagePlus, Search, Settings2, ShieldAlert, ShieldCheck } from 'lucide-react-native';
 import { Screen } from '../components/ui/Screen';
 import { FadeIn } from '../components/ui/FadeIn';
 import { useTheme } from '../theme/ThemeContext';
@@ -10,7 +10,8 @@ import { isEmployeeMode } from '../services/appPrefs';
 import type { TabScreenProps } from '../app/navigation/types';
 
 const TOOLS = [
-  { route: 'Migration', title: 'ترحيل الأصناف', sub: 'إدخال جماعي + مسح الباركود + نسخ احتياطي', Icon: PackagePlus, tone: 'primary' },
+  { route: 'Migrate', title: 'ترحيل الأصناف', sub: 'أدخل الأصناف وتواريخها دفعة واحدة', Icon: PackagePlus, tone: 'primary' },
+  { route: 'Migrate', params: { tab: 'backup' }, title: 'النسخ الاحتياطي', sub: 'حفظ واستيراد بكلمة التثبيت', Icon: Database, tone: 'good', manager: true },
   { route: 'ReportExport', title: 'تصدير التقرير', sub: 'صورة أنيقة / PDF / رسالة', Icon: MessageCircle, tone: 'good' },
   { route: 'Priority', title: 'أولويات البيع', sub: 'الأقرب انتهاءً أولاً + نص عرض', Icon: AlertTriangle, tone: 'critical' },
   { route: 'Calendar', title: 'تقويم الصلاحية', sub: 'ماذا ينتهي في أي يوم', Icon: CalendarClock, tone: 'primary' },
@@ -35,9 +36,9 @@ export function ToolsScreen({ navigation }: TabScreenProps<'Tools'>) {
         {tools.map((t, i) => {
           const color = theme.colors[t.tone];
           return (
-            <FadeIn key={t.route} delay={i * 45} style={{ width }}>
+            <FadeIn key={`${t.route}-${t.title}`} delay={i * 45} style={{ width }}>
               <Pressable
-                onPress={() => navigation.navigate(t.route as never)}
+                onPress={() => navigation.navigate(t.route as never, ('params' in t ? t.params : undefined) as never)}
                 style={({ pressed }) => [styles.card, cardShadow, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, opacity: pressed ? 0.88 : 1, transform: [{ scale: pressed ? 0.98 : 1 }] }]}
               >
                 <View style={[styles.icon, { backgroundColor: color + '1F' }]}>

@@ -112,14 +112,6 @@ export function DashboardScreen({ navigation }: TabScreenProps<'Dashboard'>) {
             </View>
 
             <Pressable
-              onPress={() => navigation.navigate({ name: 'Migration', params: undefined })}
-              style={({ pressed }) => [styles.quick, { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary, opacity: pressed ? 0.85 : 1 }]}
-            >
-              <PackagePlus size={20} color="#FFFFFF" />
-              <Text style={[styles.quickText, { color: '#FFFFFF' }]}>ترحيل الأصناف</Text>
-            </Pressable>
-
-            <Pressable
               onPress={() => navigation.navigate({ name: 'ReportExport', params: undefined })}
               style={({ pressed }) => [styles.quick, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, opacity: pressed ? 0.85 : 1 }]}
             >

@@ -31,11 +31,12 @@ export async function initDatabase(): Promise<void> {
 }
 
 /** نسخة احتياطية كاملة تُستخدم في شاشة الإعدادات. */
-export function exportSnapshot(): { products: unknown[]; batches: unknown[]; exportedAt: string } {
+export function exportSnapshot(): { products: unknown[]; batches: unknown[]; movements: unknown[]; exportedAt: string } {
   const db = getDB();
   return {
     products: db.executeSync('SELECT * FROM products').rows,
     batches: db.executeSync('SELECT * FROM batches').rows,
+    movements: db.executeSync('SELECT * FROM stock_movements').rows,
     exportedAt: new Date().toISOString(),
   };
 }

@@ -18,7 +18,7 @@ import { ProductInfoScreen } from '../../screens/ProductInfoScreen';
 import { AuditScreen } from '../../screens/AuditScreen';
 import { ThresholdsScreen } from '../../screens/ThresholdsScreen';
 import { ReportExportScreen } from '../../screens/ReportExportScreen';
-import { MigrationScreen } from '../../screens/MigrationScreen';
+import { MigrateScreen } from '../../screens/MigrateScreen';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -54,7 +54,7 @@ export function RootNavigator() {
           <Stack.Screen name="Audit" component={AuditScreen} />
           <Stack.Screen name="Thresholds" component={ThresholdsScreen} />
           <Stack.Screen name="ReportExport" component={ReportExportScreen} />
-          <Stack.Screen name="Migration" component={MigrationScreen} />
+          <Stack.Screen name="Migrate" component={MigrateScreen} />
         </>
       ) : (
         <Stack.Screen name="Auth" component={AuthNavigator} />

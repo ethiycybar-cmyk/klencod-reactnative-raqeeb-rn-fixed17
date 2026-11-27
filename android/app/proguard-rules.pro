@@ -8,3 +8,9 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+
+# وحدة رقيب الأصلية ومزوّد الملفات: تُستدعى بالانعكاس من React Native ومن الـ manifest
+-keep class com.raqeeb.app.** { *; }
+# مكتبة المشاركة (احتياطي) تستخدم الانعكاس وأصنافاً داخلية
+-keep class cl.json.** { *; }
+-dontwarn cl.json.**

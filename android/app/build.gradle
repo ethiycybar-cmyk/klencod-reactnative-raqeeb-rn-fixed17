@@ -111,8 +111,9 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
-    // ماسح الباركود من Google (خدمات Play) — بدون إذن كاميرا للتطبيق
+    // ماسح الباركود الجاهز من Google (واجهة كاميرا بدون صلاحية كاميرا) + FileProvider لمشاركة الملفات
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    implementation("androidx.core:core:1.15.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

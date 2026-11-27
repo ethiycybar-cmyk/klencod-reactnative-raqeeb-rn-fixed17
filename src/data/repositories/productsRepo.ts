@@ -123,17 +123,3 @@ export async function deleteProduct(id: number): Promise<void> {
 export function lowStockProducts(): ProductSummary[] {
   return listProducts().filter((p) => isLowStock(p.totalQuantity, p.minStock));
 }
-
-export function findProductByBarcode(barcode: string): Product | null {
-  const code = barcode.trim();
-  if (!code) return null;
-  const rows = getDB().executeSync('SELECT * FROM products WHERE barcode = ? AND deleted_at IS NULL LIMIT 1', [code]).rows;
-  return rows.length ? mapProduct(rows[0]) : null;
-}
-
-export function findProductByName(name: string): Product | null {
-  const n = name.trim();
-  if (!n) return null;
-  const rows = getDB().executeSync('SELECT * FROM products WHERE LOWER(name) = LOWER(?) AND deleted_at IS NULL LIMIT 1', [n]).rows;
-  return rows.length ? mapProduct(rows[0]) : null;
-}

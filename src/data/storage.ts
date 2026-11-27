@@ -12,6 +12,7 @@ export const EMPLOYEE_MODE_KEY = 'employee_mode';
 export const SHOP_NAME_KEY = 'shop_name';
 export const GEMINI_KEY = 'gemini_api_key';
 export const GEMINI_MODEL_KEY = 'gemini_model';
+export const MIGRATE_DRAFT_KEY = 'migrate_draft';
 
 export function isSessionOpen(): boolean {
   return storage.getBoolean(SESSION_KEY) === true;
